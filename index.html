@@ -222,10 +222,9 @@ function openSettings() {
       <div class="row gap">
         <input id="set-key" type="password" autocomplete="new-password" autocapitalize="off" autocorrect="off" spellcheck="false"
           data-lpignore="true" data-1p-ignore data-form-type="other" name="gemini-api-key-field"
-          value="${esc(settings.apiKey)}" placeholder="AIza…" oninput="keyInfo()">
+          value="${esc(settings.apiKey)}" placeholder="API anahtarınızı yapıştırın">
         <button type="button" class="icon-btn" id="key-eye" onclick="toggleKey()" aria-label="Anahtarı göster" title="Göster / gizle">👁</button>
       </div>
-      <div id="key-info" class="muted small" style="margin-top:4px"></div>
     </label>
     <p class="muted small">Ücretsiz anahtarı <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a> adresinden alabilirsiniz. Anahtar yalnızca bu cihazın tarayıcısında saklanır.</p>
     <label class="field"><span>Model</span>
@@ -241,28 +240,15 @@ function openSettings() {
       <button class="btn ghost" onclick="closeModal()">Kapat</button>
       <button class="btn primary" onclick="saveSettingsFromForm()">Kaydet</button>
     </div>`);
-  keyInfo();
 }
 function toggleKey() {
   const i = $('#set-key'), b = $('#key-eye'), show = i.type === 'password';
   i.type = show ? 'text' : 'password'; b.textContent = show ? '🙈' : '👁';
   b.setAttribute('aria-label', show ? 'Anahtarı gizle' : 'Anahtarı göster');
 }
-function keyInfo() {
-  const el = $('#key-info'); if (!el) return;
-  const raw = $('#set-key').value, k = cleanKey(raw);
-  if (!raw) { el.textContent = ''; return; }
-  const okShape = /^AIza[A-Za-z0-9_\-]{30,}$/.test(k);
-  el.innerHTML = `${k.length} karakter · ${esc(k.slice(0, 4))}…${esc(k.slice(-4))} ` +
-    (okShape ? '<span class="badge ok">Biçim doğru</span>' : '<span class="badge bad">Gemini anahtarı gibi görünmüyor</span>') +
-    (raw !== k ? ' <span class="badge warn">Fazladan karakterler temizlenecek</span>' : '');
-}
-function cleanKey(k) { return String(k || '').replace(/[^A-Za-z0-9_\-]/g, ''); }
+function cleanKey(k) { return String(k || '').trim(); }
 function readSettingsForm() {
-  const raw = $('#set-key').value;
-  settings.apiKey = cleanKey(raw);
-  if (raw.trim() && raw.trim() !== settings.apiKey) toast('Anahtardaki boşluk/özel karakterler temizlendi');
-  if (settings.apiKey && !/^AIza[A-Za-z0-9_\-]{30,}$/.test(settings.apiKey)) toast('Uyarı: Anahtar beklenen biçimde görünmüyor (AIza… ile başlamalı)', 5000);
+  settings.apiKey = cleanKey($('#set-key').value);
   settings.model = $('#set-model').value.trim() || DEFAULT_SETTINGS.model;
   settings.delay = Math.max(0, Number($('#set-delay').value) || 0);
 }
@@ -404,6 +390,7 @@ function parseJSON(t) {
 async function callGemini(parts, {retries = 3} = {}) {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(settings.model)}:generateContent`;
   const body = JSON.stringify({contents: [{role: 'user', parts}], generationConfig: {temperature: 0.2, responseMimeType: 'application/json'}});
+  if (/[^\x20-\x7E]/.test(cleanKey(settings.apiKey))) throw new Error('API anahtarında görünmez veya özel bir karakter var. Ayarlar\'da 👁 ile kontrol edip anahtarı yeniden yapıştırın.');
   for (let a = 0; ; a++) {
     let res;
     try { res = await fetch(url, {method: 'POST', headers: {'Content-Type': 'application/json', 'x-goog-api-key': cleanKey(settings.apiKey)}, body}); }
