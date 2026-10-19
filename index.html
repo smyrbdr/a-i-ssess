@@ -570,6 +570,7 @@ function renderHome() {
       </button>`).join('')}</div>`
       : `<div class="empty">Henüz sınav yok. “Yeni sınav” ile başlayın.</div>`}
     <div class="row gap mt wrap">
+      <label class="btn ghost">Rubrik dosyasından yeni sınav<input type="file" accept="application/json,.json" hidden onchange="newExamFromRubric(this.files[0])"></label>
       <label class="btn ghost">Yedekten geri yükle<input type="file" accept="application/json,.json" hidden onchange="importBackup(this.files[0])"></label>
     </div>
     <p class="muted small mt">Tüm veriler yalnızca bu cihazın tarayıcısında tutulur. Düzenli olarak “Sonuçlar → Yedek indir” ile yedek alın.</p>`;
@@ -663,12 +664,14 @@ async function generateRubric(instruction) {
 function renderRubric(e) {
   if (!e.rubric) return `<section class="panel"><p>Henüz rubrik yok.</p>
     <button class="btn primary" ${e.pages.length ? '' : 'disabled'} onclick="generateRubric()">Rubrik önerisi oluştur</button>
-    ${e.pages.length ? '' : '<p class="muted small">Önce “1 · Sınav” sekmesinden soru kâğıdını yükleyin.</p>'}</section>`;
+    ${e.pages.length ? '' : '<p class="muted small">Önce “1 · Sınav” sekmesinden soru kâğıdını yükleyin.</p>'}
+    <div class="note small mt">Daha önce indirdiğiniz bir rubrik varsa doğrudan yükleyebilirsiniz.</div>
+    <label class="btn mt">⬆ Rubrik dosyası yükle<input type="file" accept="application/json,.json" hidden onchange="importRubric(this.files[0])"></label></section>`;
   const r = e.rubric;
   if (e.rubricStatus === 'approved') return `
     <section class="panel">
       <div class="row between wrap gap"><div><b>Onaylı rubrik · v${e.rubricVersion}</b><div class="muted small">Toplam ${fmt(rubricMax(r))} puan · ${r.questions.length} şık</div></div>
-      <button class="btn" onclick="editApprovedRubric()">Düzenle (yeni sürüm)</button></div>
+      <div class="row gap wrap"><button class="btn" onclick="exportRubric()">⬇ Rubriği indir</button><button class="btn" onclick="editApprovedRubric()">Düzenle (yeni sürüm)</button></div></div>
       ${r.generalRules ? `<div class="note small"><b>Genel kurallar:</b> ${esc(r.generalRules)}</div>` : ''}
       ${r.questions.map(q => `
         <div class="qcard">
@@ -719,6 +722,8 @@ function renderRubric(e) {
         <textarea id="ai-instr" rows="2" placeholder="Ör. 2. soruda her kırılma noktasının incelenmesine eşit puan ver; sonuç adımını 1 puana düşür."></textarea>
         <button class="btn small mt" onclick="reviseRubric()">Öneriyi güncelle</button></div>
       <div class="row gap end mt wrap">
+        <button class="btn ghost" onclick="exportRubric()">⬇ Taslağı indir</button>
+        <label class="btn ghost">⬆ Rubrik yükle<input type="file" accept="application/json,.json" hidden onchange="importRubric(this.files[0])"></label>
         <button class="btn ghost" onclick="generateRubric()">Baştan öner</button>
         <button class="btn primary" onclick="approveRubric()">Rubriği onayla ✓</button>
       </div>
@@ -1033,6 +1038,48 @@ function exportExcel() {
   add(reasons, 'Gerekçeler', [{wch: 14}, {wch: 6}, {wch: 6}, {wch: 50}, {wch: 6}, {wch: 6}, {wch: 50}, {wch: 8}, {wch: 50}]);
   add(rub, 'Rubrik', [{wch: 14}, {wch: 6}, {wch: 60}, {wch: 6}, {wch: 30}]);
   XLSX.writeFile(wb, `${safeName(e.title)}_sonuclar.xlsx`);
+}
+function exportRubric() {
+  const e = S.exam;
+  if (!e.rubric) return toast('İndirilecek rubrik yok');
+  const data = {app: 'not-asistani', kind: 'rubric', format: 1, exportedAt: new Date().toISOString(),
+    title: e.title, notes: e.notes || '', status: e.rubricStatus, version: e.rubricVersion, rubric: e.rubric};
+  download(new Blob([JSON.stringify(data, null, 2)], {type: 'application/json'}), `${safeName(e.title)}_rubrik_${e.rubricStatus === 'approved' ? 'v' + e.rubricVersion : 'taslak'}.json`);
+}
+async function readRubricFile(file) {
+  const data = JSON.parse(await file.text());
+  if (data.app !== 'not-asistani') throw new Error('Bu dosya bir Not Asistanı rubriği değil');
+  const src = data.kind === 'rubric' ? data : (data.exam ? {title: data.exam.title, notes: data.exam.notes, rubric: data.exam.rubric} : null);
+  if (!src || !src.rubric || !Array.isArray(src.rubric.questions) || !src.rubric.questions.length) throw new Error('Dosyada rubrik bulunamadı');
+  const r = clone(src.rubric);
+  r.generalRules = String(r.generalRules || '');
+  r.questions = r.questions.map(q => ({id: String(q.id).trim(), text: String(q.text || ''), answer: String(q.answer || ''),
+    solution: String(q.solution || ''), guidance: String(q.guidance || ''), maxPoints: Number(q.maxPoints) || 0,
+    steps: (q.steps || []).map(x => ({description: String(x.description || ''), points: Number(x.points) || 0}))}));
+  assignStepIds(r);
+  return {title: src.title || 'Yüklenen rubrik', notes: src.notes || '', rubric: r};
+}
+async function importRubric(file) {
+  if (!file) return;
+  try {
+    const {rubric, notes} = await readRubricFile(file);
+    const e = S.exam;
+    if (e.rubric && !confirm(`Bu sınavdaki mevcut rubrik, yüklenen rubrikle değiştirilecek${S.papers.some(p => p.result) ? '; puanlanmış kâğıtlar “eski rubrik” olarak işaretlenecek' : ''}. Devam?`)) return;
+    e.rubric = rubric; e.rubricStatus = 'draft';
+    if (!e.notes && notes) e.notes = notes;
+    await saveExam(); S.tab = 'rubric'; render(); window.scrollTo(0, 0);
+    toast('Rubrik yüklendi. İnceleyip onaylayın.', 4000);
+  } catch (err) { showError(err); }
+}
+async function newExamFromRubric(file) {
+  if (!file) return;
+  try {
+    const {title, notes, rubric} = await readRubricFile(file);
+    const e = {id: uid(), title, createdAt: Date.now(), pages: [], notes, mask: null,
+      rubric, rubricStatus: 'draft', rubricVersion: 0, rubricHistory: []};
+    await DB.put('exams', e); await openExam(e.id);
+    toast('Rubrik yüklendi. İnceleyip onaylayın; ad/numara bölgesini “1 · Sınav” sekmesinden işaretleyebilirsiniz.', 5000);
+  } catch (err) { showError(err); }
 }
 async function exportBackup() {
   const data = {app: 'not-asistani', format: 1, exportedAt: new Date().toISOString(), exam: S.exam, papers: S.papers};
