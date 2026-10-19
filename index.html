@@ -219,7 +219,13 @@ function openSettings() {
   showModal(`
     <h2>Ayarlar</h2>
     <label class="field"><span>Gemini API anahtarı</span>
-      <input id="set-key" type="password" autocomplete="off" value="${esc(settings.apiKey)}" placeholder="AIza…">
+      <div class="row gap">
+        <input id="set-key" type="password" autocomplete="new-password" autocapitalize="off" autocorrect="off" spellcheck="false"
+          data-lpignore="true" data-1p-ignore data-form-type="other" name="gemini-api-key-field"
+          value="${esc(settings.apiKey)}" placeholder="AIza…" oninput="keyInfo()">
+        <button type="button" class="icon-btn" id="key-eye" onclick="toggleKey()" aria-label="Anahtarı göster" title="Göster / gizle">👁</button>
+      </div>
+      <div id="key-info" class="muted small" style="margin-top:4px"></div>
     </label>
     <p class="muted small">Ücretsiz anahtarı <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a> adresinden alabilirsiniz. Anahtar yalnızca bu cihazın tarayıcısında saklanır.</p>
     <label class="field"><span>Model</span>
@@ -235,6 +241,21 @@ function openSettings() {
       <button class="btn ghost" onclick="closeModal()">Kapat</button>
       <button class="btn primary" onclick="saveSettingsFromForm()">Kaydet</button>
     </div>`);
+  keyInfo();
+}
+function toggleKey() {
+  const i = $('#set-key'), b = $('#key-eye'), show = i.type === 'password';
+  i.type = show ? 'text' : 'password'; b.textContent = show ? '🙈' : '👁';
+  b.setAttribute('aria-label', show ? 'Anahtarı gizle' : 'Anahtarı göster');
+}
+function keyInfo() {
+  const el = $('#key-info'); if (!el) return;
+  const raw = $('#set-key').value, k = cleanKey(raw);
+  if (!raw) { el.textContent = ''; return; }
+  const okShape = /^AIza[A-Za-z0-9_\-]{30,}$/.test(k);
+  el.innerHTML = `${k.length} karakter · ${esc(k.slice(0, 4))}…${esc(k.slice(-4))} ` +
+    (okShape ? '<span class="badge ok">Biçim doğru</span>' : '<span class="badge bad">Gemini anahtarı gibi görünmüyor</span>') +
+    (raw !== k ? ' <span class="badge warn">Fazladan karakterler temizlenecek</span>' : '');
 }
 function cleanKey(k) { return String(k || '').replace(/[^A-Za-z0-9_\-]/g, ''); }
 function readSettingsForm() {
