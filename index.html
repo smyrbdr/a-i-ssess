@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>A-I-ssess</title>
+<title>Not Asistanı</title>
 <meta name="theme-color" content="#1f5fa8">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
@@ -134,7 +134,7 @@ tfoot td{font-weight:700;background:var(--surface2)}
 </head>
 <body>
 <header class="top">
-  <button class="brand" onclick="goHome()">AI Assessment</button>
+  <button class="brand" onclick="goHome()">Not Asistanı</button>
   <button class="icon-btn" onclick="openSettings()" aria-label="Ayarlar" title="Ayarlar">⚙</button>
 </header>
 <main id="app"></main>
@@ -203,12 +203,14 @@ const safeName = s => (s || 'sinav').replace(/[\\/:*?"<>|]+/g, '_').trim().slice
 
 /* ================= Ayarlar ================= */
 const SETTINGS_KEY = 'na_settings';
-const DEFAULT_SETTINGS = {apiKey: '', model: 'gemini-2.5-flash', delay: 6};
+const DEFAULT_SETTINGS = {apiKey: '', model: 'gemini-3.8-flash', delay: 6};
+const RETIRED_MODELS = ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.5-flash-lite'];
 function loadSettings() {
   try { return Object.assign({}, DEFAULT_SETTINGS, JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}')); }
   catch (e) { return Object.assign({}, DEFAULT_SETTINGS); }
 }
 let settings = loadSettings();
+if (RETIRED_MODELS.includes(settings.model)) { settings.model = DEFAULT_SETTINGS.model; try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch (e) {} }
 function saveSettings() {
   try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); }
   catch (e) { toast('Ayarlar tarayıcıya kaydedilemedi.'); }
@@ -222,7 +224,7 @@ function openSettings() {
     <p class="muted small">Ücretsiz anahtarı <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a> adresinden alabilirsiniz. Anahtar yalnızca bu cihazın tarayıcısında saklanır.</p>
     <label class="field"><span>Model</span>
       <input id="set-model" list="models" value="${esc(settings.model)}">
-      <datalist id="models"><option value="gemini-2.5-flash"><option value="gemini-2.5-pro"><option value="gemini-2.5-flash-lite"></datalist>
+      <datalist id="models"><option value="gemini-3.8-flash"></datalist>
     </label>
     <label class="field"><span>Toplu değerlendirmede kâğıtlar arası bekleme (sn)</span>
       <input id="set-delay" type="number" min="0" step="1" value="${esc(settings.delay)}">
@@ -234,8 +236,12 @@ function openSettings() {
       <button class="btn primary" onclick="saveSettingsFromForm()">Kaydet</button>
     </div>`);
 }
+function cleanKey(k) { return String(k || '').replace(/[^A-Za-z0-9_\-]/g, ''); }
 function readSettingsForm() {
-  settings.apiKey = $('#set-key').value.trim();
+  const raw = $('#set-key').value;
+  settings.apiKey = cleanKey(raw);
+  if (raw.trim() && raw.trim() !== settings.apiKey) toast('Anahtardaki boşluk/özel karakterler temizlendi');
+  if (settings.apiKey && !/^AIza[A-Za-z0-9_\-]{30,}$/.test(settings.apiKey)) toast('Uyarı: Anahtar beklenen biçimde görünmüyor (AIza… ile başlamalı)', 5000);
   settings.model = $('#set-model').value.trim() || DEFAULT_SETTINGS.model;
   settings.delay = Math.max(0, Number($('#set-delay').value) || 0);
 }
@@ -257,7 +263,7 @@ const DB = {
   db: null,
   open() {
     return new Promise((res, rej) => {
-      const r = indexedDB.open('a-i-ssess', 1);
+      const r = indexedDB.open('not-asistani', 1);
       r.onupgradeneeded = () => {
         const d = r.result;
         d.createObjectStore('exams', {keyPath: 'id'});
@@ -379,7 +385,7 @@ async function callGemini(parts, {retries = 3} = {}) {
   const body = JSON.stringify({contents: [{role: 'user', parts}], generationConfig: {temperature: 0.2, responseMimeType: 'application/json'}});
   for (let a = 0; ; a++) {
     let res;
-    try { res = await fetch(url, {method: 'POST', headers: {'Content-Type': 'application/json', 'x-goog-api-key': settings.apiKey}, body}); }
+    try { res = await fetch(url, {method: 'POST', headers: {'Content-Type': 'application/json', 'x-goog-api-key': cleanKey(settings.apiKey)}, body}); }
     catch (err) { if (a < retries) { await sleep(3000 * (a + 1)); continue; } throw new Error('Ağ hatası: ' + err.message); }
     if ([429, 500, 503].includes(res.status) && a < retries) {
       const wait = 20 * (a + 1);
@@ -387,7 +393,18 @@ async function callGemini(parts, {retries = 3} = {}) {
       await sleep(wait * 1000); setBusyNote(''); continue;
     }
     const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error((data.error && data.error.message) || `HTTP ${res.status}`);
+    if (!res.ok) {
+      const msg = (data.error && data.error.message) || `HTTP ${res.status}`;
+      const sug = msg.match(/use models\/([A-Za-z0-9.\-]+)/);
+      if (sug && sug[1] !== settings.model && !callGemini._switched) {
+        callGemini._switched = true;
+        settings.model = sug[1]; saveSettings();
+        toast(`Model güncellendi: ${sug[1]}`, 4000);
+        const r = await callGemini(parts, {retries}); callGemini._switched = false; return r;
+      }
+      callGemini._switched = false;
+      throw new Error(msg);
+    }
     const cand = data.candidates && data.candidates[0];
     const text = ((cand && cand.content && cand.content.parts) || []).filter(p => !p.thought).map(p => p.text || '').join('');
     if (!text) throw new Error('Model boş yanıt döndürdü' + (cand && cand.finishReason ? ` (${cand.finishReason})` : ''));
@@ -1010,7 +1027,7 @@ function exportExcel() {
   XLSX.writeFile(wb, `${safeName(e.title)}_sonuclar.xlsx`);
 }
 async function exportBackup() {
-  const data = {app: 'a-i-ssess', format: 1, exportedAt: new Date().toISOString(), exam: S.exam, papers: S.papers};
+  const data = {app: 'not-asistani', format: 1, exportedAt: new Date().toISOString(), exam: S.exam, papers: S.papers};
   download(new Blob([JSON.stringify(data)], {type: 'application/json'}), `${safeName(S.exam.title)}_yedek.json`);
 }
 async function importBackup(file) {
@@ -1018,7 +1035,7 @@ async function importBackup(file) {
   setBusy('Yedek yükleniyor…');
   try {
     const data = JSON.parse(await file.text());
-    if (data.app !== 'a-i-ssess' || !data.exam) throw new Error('Bu dosya bir A-I-ssess yedeği değil');
+    if (data.app !== 'not-asistani' || !data.exam) throw new Error('Bu dosya bir Not Asistanı yedeği değil');
     if (await DB.get('exams', data.exam.id) && !confirm(`“${data.exam.title}” zaten var. Üzerine yazılsın mı?`)) return;
     await DB.put('exams', data.exam);
     for (const p of (data.papers || [])) await DB.put('papers', p);
