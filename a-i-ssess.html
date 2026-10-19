@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Not Asistanı</title>
+<title>A-I-ssess</title>
 <meta name="theme-color" content="#1f5fa8">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
@@ -134,7 +134,7 @@ tfoot td{font-weight:700;background:var(--surface2)}
 </head>
 <body>
 <header class="top">
-  <button class="brand" onclick="goHome()">Not Asistanı</button>
+  <button class="brand" onclick="goHome()">AI Assessment</button>
   <button class="icon-btn" onclick="openSettings()" aria-label="Ayarlar" title="Ayarlar">⚙</button>
 </header>
 <main id="app"></main>
@@ -257,7 +257,7 @@ const DB = {
   db: null,
   open() {
     return new Promise((res, rej) => {
-      const r = indexedDB.open('not-asistani', 1);
+      const r = indexedDB.open('a-i-ssess', 1);
       r.onupgradeneeded = () => {
         const d = r.result;
         d.createObjectStore('exams', {keyPath: 'id'});
@@ -1010,7 +1010,7 @@ function exportExcel() {
   XLSX.writeFile(wb, `${safeName(e.title)}_sonuclar.xlsx`);
 }
 async function exportBackup() {
-  const data = {app: 'not-asistani', format: 1, exportedAt: new Date().toISOString(), exam: S.exam, papers: S.papers};
+  const data = {app: 'a-i-ssess', format: 1, exportedAt: new Date().toISOString(), exam: S.exam, papers: S.papers};
   download(new Blob([JSON.stringify(data)], {type: 'application/json'}), `${safeName(S.exam.title)}_yedek.json`);
 }
 async function importBackup(file) {
@@ -1018,7 +1018,7 @@ async function importBackup(file) {
   setBusy('Yedek yükleniyor…');
   try {
     const data = JSON.parse(await file.text());
-    if (data.app !== 'not-asistani' || !data.exam) throw new Error('Bu dosya bir Not Asistanı yedeği değil');
+    if (data.app !== 'a-i-ssess' || !data.exam) throw new Error('Bu dosya bir A-I-ssess yedeği değil');
     if (await DB.get('exams', data.exam.id) && !confirm(`“${data.exam.title}” zaten var. Üzerine yazılsın mı?`)) return;
     await DB.put('exams', data.exam);
     for (const p of (data.papers || [])) await DB.put('papers', p);
